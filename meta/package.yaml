@@ -1,0 +1,9 @@
+name: piglowtop
+vendor: Kyle Fazzari <kyle@canonical.com>
+architecture: [armhf]
+version: 0.1.0
+icon: meta/icon.svg
+services:
+  - name: piglowtop
+    description: "PiGlow Top service"
+    start: ./bin/piglowtop

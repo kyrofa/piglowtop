@@ -30,7 +30,11 @@ import (
 	"time"
 )
 
-// main is the entry point of this program.
+// main is the entry point of this program. It accepts two command-line
+// parameters:
+//
+// - brightness: Percentage of max LED brightness (between 0 and 1.0).
+// - period: CPU poll period (in milliseconds).
 func main() {
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
@@ -46,13 +50,17 @@ func main() {
 			*brightnessParameter)
 	}
 
-	// Initialize the CPU info so we can start out with a history
-	stat, err := linux.ReadStat("/proc/stat")
-	if err != nil {
-		log.Fatalf("Unable to process /proc/stat: %s", err)
+	// Make sure we have a PiGlow to use. If we don't, provide a helpful error
+	// message and exit, but wait several seconds before doing so in case systemd
+	// respawns us. We don't want to hit its start limit.
+	if !piglow.HasPiGlow() {
+		log.Println("Unable to access PiGlow. Perhaps you need to hw-assign it?")
+		time.Sleep(6 * time.Second)
+		os.Exit(1)
 	}
 
-	previousStat := stat.CPUStatAll
+	// Initialize the CPU info so we can start out with a history
+	previousStat := cpuStats()
 
 	ticker := time.NewTicker(time.Duration(*pollPeriodParameter) *
 		time.Millisecond)
@@ -60,12 +68,7 @@ func main() {
 	// Run this loop in a go routine so we can stop on demand.
 	go func() {
 		for _ = range ticker.C {
-			stat, err = linux.ReadStat("/proc/stat")
-			if err != nil {
-				log.Fatalf("Unable to process /proc/stat: %s", err)
-			}
-
-			currentStat := stat.CPUStatAll
+			currentStat := cpuStats()
 
 			// Calculate previous idle and total ticks
 			previousIdle := previousStat.Idle + previousStat.IOWait
@@ -94,6 +97,16 @@ func main() {
 	<-signals         // Wait for request to stop
 	ticker.Stop()     // We've been asked to stop
 	piglow.ShutDown() // Turn off all LEDs
+}
+
+// cpuStats reads /proc/stat to obtain CPU utilization statistics.
+func cpuStats() linux.CPUStat {
+	stat, err := linux.ReadStat("/proc/stat")
+	if err != nil {
+		log.Fatalf("Unable to process /proc/stat: %s", err)
+	}
+
+	return stat.CPUStatAll
 }
 
 // displayUtilization takes a utilization percentage (between 0 and 1.0) and a
